@@ -151,14 +151,13 @@ patterns = {
 }
 
 
-def insert_toot(oii, acc, post, cursor):  # extracted to prevent duplication
-	pid = patterns["pid"].search(oii['object']['id']).group(0)
+def insert_toot(post, acc, content, cursor):  # extracted to prevent duplication
 	cursor.execute("REPLACE INTO toots (id, cw, userid, uri, content) VALUES (?, ?, ?, ?, ?)", (
-		pid,
-		1 if (oii['object']['summary'] is not None and oii['object']['summary'] != "") else 0,
+		post['id'],
+		1 if (post['spoiler_text'] is not None and post['spoiler_text'] != "") else 0,
 		acc.id,
-		oii['object']['id'],
-		post
+		post['uri'],
+		content
 	))
 
 
@@ -183,87 +182,45 @@ for f in following:
 		continue
 
 	try:
-		# 1. download host-meta to find webfinger URL
-		r = requests.get("https://{}/.well-known/host-meta".format(instance), timeout=10)
-		# 2. use webfinger to find user's info page
-		uri = patterns["uri"].search(r.text).group(1)
-		uri = uri.format(uri="{}@{}".format(f.username, instance))
-		r = requests.get(uri, headers={"Accept": "application/json"}, timeout=10)
-		j = r.json()
-		found = False
-		for link in j['links']:
-			if link['rel'] == 'self':
-				# this is a link formatted like "https://instan.ce/users/username", which is what we need
-				uri = link['href']
-				found = True
-				break
-		if not found:
-			print("Couldn't find a valid ActivityPub outbox URL.")
-
-		# 3. download first page of outbox
-		uri = "{}/outbox?page=true".format(uri)
-		r = requests.get(uri, timeout=15)
-		j = r.json()
+		# download first 20 toots since last toot
+		posts = client.account_statuses(f.id, min_id=last_toot)
 	except:
 		print("oopsy woopsy!! we made a fucky wucky!!!\n(we're probably rate limited, please hang up and try again)")
 		sys.exit(1)
 
-	pleroma = False
-	if 'next' not in j and 'prev' not in j:
-		# there's only one page of results, don't bother doing anything special
-		pass
-	elif 'prev' not in j:
-		print("Using Pleroma compatibility mode")
-		pleroma = True
-		if 'first' in j:
-			# apparently there used to be a 'first' field in pleroma's outbox output, but it's not there any more
-			# i'll keep this for backwards compatibility with older pleroma instances
-			# it was removed in pleroma 1.0.7 - https://git.pleroma.social/pleroma/pleroma/-/blob/841e4e4d835b8d1cecb33102356ca045571ef1fc/CHANGELOG.md#107-2019-09-26
-			j = j['first']
-	else:
-		print("Using standard mode")
-		uri = "{}&min_id={}".format(uri, last_toot)
-		r = requests.get(uri)
-		j = r.json()
-
 	print("Downloading and saving posts", end='', flush=True)
 	done = False
 	try:
-		while not done and len(j['orderedItems']) > 0:
-			for oi in j['orderedItems']:
-				if oi['type'] != "Create":
+		while not done and len(posts) > 0:
+			for post in posts:
+				if post['reblog'] is not None:
 					continue  # this isn't a toot/post/status/whatever, it's a boost or a follow or some other activitypub thing. ignore
 
 				# its a toost baby
-				content = oi['object']['content']
+				content = post['content']
 				toot = extract_toot(content)
 				# print(toot)
 				try:
-					if pleroma:
-						if c.execute("SELECT COUNT(*) FROM toots WHERE uri LIKE ?", (oi['object']['id'],)).fetchone()[0] > 0:
-							# we've caught up to the notices we've already downloaded, so we can stop now
-							# you might be wondering, "lynne, what if the instance ratelimits you after 40 posts, and they've made 60 since main.py was last run? wouldn't the bot miss 20 posts and never be able to see them?" to which i reply, "i know but i don't know how to fix it"
-							done = True
-							continue
+					if c.execute("SELECT COUNT(*) FROM toots WHERE uri LIKE ?", (post['id'],)).fetchone()[0] > 0:
+						# we've caught up to the notices we've already downloaded, so we can stop now
+						# you might be wondering, "lynne, what if the instance ratelimits you after 40 posts, and they've made 60 since main.py was last run? wouldn't the bot miss 20 posts and never be able to see them?" to which i reply, "i know but i don't know how to fix it"
+						done = True
 					if 'lang' in cfg:
 						try:
-							if oi['object']['contentMap'][cfg['lang']]:  # filter for language
-								insert_toot(oi, f, toot, c)
+							if post['language'] == cfg['lang']:  # filter for language
+								insert_toot(post, f, toot, c)
 						except KeyError:
-							# JSON doesn't have contentMap, just insert the toot irregardlessly
-							insert_toot(oi, f, toot, c)
+							# JSON doesn't have language, just insert the toot irregardlessly
+							insert_toot(post, f, toot, c)
 					else:
-						insert_toot(oi, f, toot, c)
+						insert_toot(post, f, toot, c)
 					pass
 				except:
 					pass  # ignore any toots that don't successfully go into the DB
 
-			# get the next/previous page
+			# get the next <20 posts
 			try:
-				if not pleroma:
-					r = requests.get(j['prev'], timeout=15)
-				else:
-					r = requests.get(j['next'], timeout=15)
+				posts = client.account_statuses(f.id, min_id=posts[0]['id'])
 			except requests.Timeout:
 				print("HTTP timeout, site did not respond within 15 seconds")
 			except KeyError:
@@ -271,7 +228,6 @@ for f in following:
 			except:
 				print("An error occurred while trying to obtain more posts.")
 
-			j = r.json()
 			print('.', end='', flush=True)
 		print(" Done!")
 		db.commit()

@@ -22,6 +22,7 @@ scopes = ["read:statuses", "read:accounts", "read:follows", "write:statuses", "r
 cfg = {
 	"site": "https://botsin.space",
 	"cw": None,
+	"cw_reply": False,
 	"instance_blacklist": ["bofa.lol", "witches.town", "knzk.me"],  # rest in piece
 	"learn_from_cw": False,
 	"mention_handling": 1,

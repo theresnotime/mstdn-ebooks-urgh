@@ -81,7 +81,7 @@ class ReplyListener(mastodon.StreamListener):
 				visibility = notification['status']['visibility']
 				if visibility == "public":
 					visibility = "unlisted"
-				client.status_post(toot, post_id, visibility=visibility, spoiler_text=cfg['cw'])  # send toost
+				client.status_post(toot, post_id, visibility=visibility, spoiler_text=cfg['cw'] if cfg['cw_reply'] else None)  # send toost
 				print("replied with " + toot)  # logging
 
 

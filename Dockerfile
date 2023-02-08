@@ -8,6 +8,7 @@ VOLUME /ebooks/data/
 RUN apk add --virtual .build-deps gcc musl-dev libffi-dev openssl-dev \
      && pip install -r requirements.txt \
      && apk del --purge .build-deps \
+     && apk add bash \
      && ln -s data/config.json . \
      && ln -s data/toots.db .
 

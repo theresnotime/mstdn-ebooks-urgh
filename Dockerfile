@@ -12,6 +12,8 @@ RUN apk add --virtual .build-deps gcc musl-dev libffi-dev openssl-dev \
      && ln -s data/toots.db .
 
 ADD entrypoint.sh ./
+RUN chmod +x entrypoint.sh
+
 ADD *.py ./
 
 ENV EBOOKS_SITE=https://botsin.space

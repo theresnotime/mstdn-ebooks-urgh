@@ -13,12 +13,14 @@ RUN apk add --virtual .build-deps gcc musl-dev libffi-dev openssl-dev \
 
 ADD *.py /ebooks/
 
-RUN (echo "*/30 * * * * cd /ebooks/ && python gen.py"; \
-     echo "5 */2 * * * cd /ebooks/ && python main.py"; \
+ENV EBOOKS_SITE=https://botsin.space
+ENV POST_TIMINGS="*/30 * * * *"
+ENV FETCH_TIMINGS="5 */2 * * *"
+
+RUN (echo "${POST_TIMINGS} cd /ebooks/ && python gen.py"; \
+     echo "${FETCH_TIMINGS} cd /ebooks/ && python main.py"; \
      echo "@reboot cd /ebooks/ && python reply.py") | crontab -
 
-ENV ebooks_site=https://botsin.space
-
-CMD (test -f data/config.json || echo "{\"site\":\"${ebooks_site}\"}" > data/config.json) \
+CMD (test -f data/config.json || echo "{\"site\":\"${EBOOKS_SITE}\"}" > data/config.json) \
  && (test -f data/toots.db || (python main.py && exit)) \
  && exec crond -f -L /dev/stdout
